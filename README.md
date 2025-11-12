@@ -131,9 +131,9 @@ Las contribuciones son bienvenidas. Por favor:
 
 Este proyecto es de código abierto y está disponible para uso educativo.
 
-## Autor
+## Autores
 
-Desarrollado como herramienta educativa para el análisis gráfico de Programación Lineal.
+Vladislav Bochkov y Ender Rosales Condoli
 
 ## Reporte de Bugs
 
