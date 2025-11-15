@@ -55,6 +55,10 @@ body {
     align-items: center;
     justify-content: center;
     gap: 15px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    text-align: center;
+    line-height: 1.2;
 }
 
 .subtitle {
@@ -368,10 +372,41 @@ body {
     flex-direction: column;
 }
 
+.visualization-panel h2 {
+    font-size: 1.3rem;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.3;
+}
+
 #plot {
     width: 100%;
     height: 600px;
+    max-width: 100%;
     border-radius: 8px;
+}
+
+/* Responsive height for smaller screens so the chart isn't squashed */
+@media (max-width: 768px) {
+    #plot {
+        /* use viewport height to keep it visible but not take the whole screen */
+        height: 45vh;
+    }
+    
+    .visualization-panel h2 {
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
+    }
+}
+
+@media (max-width: 420px) {
+    #plot {
+        height: 50vh;
+    }
+    
+    .visualization-panel h2 {
+        font-size: 0.85rem;
+    }
 }
 
 /* Loading Spinner */
@@ -473,9 +508,18 @@ body {
     }
     
     .header h1 {
-        font-size: 1.8rem;
+        font-size: 1.3rem;
         flex-direction: column;
-        gap: 8px;
+        gap: 5px;
+        padding: 0 10px;
+    }
+    
+    .header h1 i {
+        font-size: 1.5rem;
+    }
+    
+    .subtitle {
+        font-size: 0.9rem;
     }
     
     .objective-function {
@@ -484,6 +528,16 @@ body {
     
     #plot {
         height: 400px;
+    }
+}
+
+@media (max-width: 480px) {
+    .header h1 {
+        font-size: 1.1rem;
+    }
+    
+    .header h1 i {
+        font-size: 1.3rem;
     }
 }
 

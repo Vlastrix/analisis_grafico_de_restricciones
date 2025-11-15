@@ -157,8 +157,22 @@ async function solveProblem() {
         if (data.success) {
             plotResults(data, x1Max, x2Max);
             showResults(data);
+        } else if (data.unbounded) {
+            // Caso no acotado: mostrar región con mensaje especial
+            showError(data.error, true, false);
+            if (data.vertices && data.vertices.length > 0) {
+                // Dibujar la región factible y restricciones aunque sea no acotado
+                plotResults(data, x1Max, x2Max);
+            }
+        } else if (data.infeasible) {
+            // Caso infactible: mostrar restricciones
+            showError(data.error, false, true);
+            if (data.constraint_lines && data.constraint_lines.length > 0) {
+                // Dibujar solo las restricciones para mostrar por qué es infactible
+                plotResults(data, x1Max, x2Max);
+            }
         } else {
-            showError(data.error);
+            showError(data.error, false, false);
         }
         
     } catch (error) {
@@ -168,8 +182,16 @@ async function solveProblem() {
 }
 
 // Mostrar error
-function showError(message) {
+function showError(message, isUnbounded, isInfeasible) {
     document.getElementById('error-panel').style.display = 'block';
+    const errorTitle = document.querySelector('#error-panel h2');
+    if (isUnbounded) {
+        errorTitle.innerHTML = '<i class="fas fa-infinity"></i> Problema No Acotado';
+    } else if (isInfeasible) {
+        errorTitle.innerHTML = '<i class="fas fa-ban"></i> Problema Infactible';
+    } else {
+        errorTitle.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+    }
     document.getElementById('error-content').textContent = message;
     document.getElementById('plot').style.display = 'none';
 }
@@ -179,7 +201,8 @@ function showResults(data) {
     const resultsPanel = document.getElementById('results-panel');
     const resultsContent = document.getElementById('results-content');
     
-    if (!data.optimal_point || !data.optimal_value) {
+    // Verificar si hay solución óptima (cuidado: optimal_value puede ser 0, que es válido)
+    if ((!data.optimal_point && (!data.optimal_points || data.optimal_points.length===0)) || data.optimal_value === undefined || data.optimal_value === null) {
         resultsContent.innerHTML = `
             <div class="result-item">
                 <div class="result-label">Estado</div>
@@ -189,29 +212,50 @@ function showResults(data) {
         resultsPanel.style.display = 'block';
         return;
     }
-    
-    const [x1, x2] = data.optimal_point;
     const optimalValue = data.optimal_value;
     const objectiveType = data.is_maximize ? 'Maximizar' : 'Minimizar';
-    
-    resultsContent.innerHTML = `
-        <div class="result-item">
+
+    // Build optimal solution display: single point or multiple points/segment
+    let optimalHtml = '';
+    if (data.optimal_points && data.optimal_points.length > 1) {
+        optimalHtml += `<div class="result-item">
             <div class="result-label">Tipo de Problema</div>
             <div class="result-value">${objectiveType}</div>
-        </div>
-        <div class="result-item">
-            <div class="result-label">Punto Óptimo</div>
-            <div class="result-value">x₁ = ${x1.toFixed(3)}, x₂ = ${x2.toFixed(3)}</div>
-        </div>
-        <div class="result-item">
+        </div>`;
+        optimalHtml += `<div class="result-item">
             <div class="result-label">Valor Óptimo (Z)</div>
             <div class="result-value">${optimalValue.toFixed(3)}</div>
-        </div>
-        <div class="result-item">
+        </div>`;
+
+        // List all optimal points
+        optimalHtml += `<div class="result-item">
+            <div class="result-label">Puntos Óptimos</div>
+            <div class="result-value">`;
+        optimalHtml += data.optimal_points.map(p => `x₁ = ${p[0].toFixed(3)}, x₂ = ${p[1].toFixed(3)}`).join('<br>');
+        optimalHtml += `</div></div>`;
+    } else {
+        const pt = data.optimal_point || (data.optimal_points && data.optimal_points[0]);
+        const x1 = pt[0], x2 = pt[1];
+        optimalHtml += `<div class="result-item">
+            <div class="result-label">Tipo de Problema</div>
+            <div class="result-value">${objectiveType}</div>
+        </div>`;
+        optimalHtml += `<div class="result-item">
+            <div class="result-label">Punto Óptimo</div>
+            <div class="result-value">x₁ = ${x1.toFixed(3)}, x₂ = ${x2.toFixed(3)}</div>
+        </div>`;
+        optimalHtml += `<div class="result-item">
+            <div class="result-label">Valor Óptimo (Z)</div>
+            <div class="result-value">${optimalValue.toFixed(3)}</div>
+        </div>`;
+    }
+
+    optimalHtml += `<div class="result-item">
             <div class="result-label">Número de Vértices</div>
             <div class="result-value">${data.vertices.length}</div>
-        </div>
-    `;
+        </div>`;
+
+    resultsContent.innerHTML = optimalHtml;
     
     resultsPanel.style.display = 'block';
 }
@@ -271,45 +315,77 @@ function plotResults(data, x1Max, x2Max) {
     // 2. Graficar región factible
     if (data.vertices && data.vertices.length > 0) {
         const vertices = data.vertices;
-        const x1_vertices = vertices.map(v => v[0]);
-        const x2_vertices = vertices.map(v => v[1]);
         
-        // Cerrar el polígono
-        x1_vertices.push(vertices[0][0]);
-        x2_vertices.push(vertices[0][1]);
-        
-        traces.push({
-            x: x1_vertices,
-            y: x2_vertices,
-            fill: 'toself',
-            fillcolor: 'rgba(16, 185, 129, 0.3)',
-            line: {
-                color: 'rgba(16, 185, 129, 0.8)',
-                width: 2,
-                dash: 'dot'
-            },
-            mode: 'lines',
-            name: 'Región Factible',
-            hoverinfo: 'skip'
-        });
-        
-        // Marcar vértices
-        traces.push({
-            x: vertices.map(v => v[0]),
-            y: vertices.map(v => v[1]),
-            mode: 'markers',
-            name: 'Vértices',
-            marker: {
-                color: '#10b981',
-                size: 8,
-                symbol: 'circle',
+        // Manejar casos degenerados
+        if (vertices.length === 1) {
+            // Región es un solo punto: dibujarlo como un marcador grande
+            traces.push({
+                x: [vertices[0][0]],
+                y: [vertices[0][1]],
+                mode: 'markers',
+                name: 'Región Factible (punto único)',
+                marker: {
+                    color: 'rgba(16, 185, 129, 0.8)',
+                    size: 15,
+                    symbol: 'circle',
+                    line: { color: 'white', width: 2 }
+                },
+                hovertemplate: 'Punto factible único<br>x₁: %{x:.3f}<br>x₂: %{y:.3f}<extra></extra>'
+            });
+        } else if (vertices.length === 2) {
+            // Región es un segmento: dibujarlo como línea
+            traces.push({
+                x: [vertices[0][0], vertices[1][0]],
+                y: [vertices[0][1], vertices[1][1]],
+                mode: 'lines+markers',
+                name: 'Región Factible (segmento)',
+                line: { color: 'rgba(16, 185, 129, 0.8)', width: 4 },
+                marker: { color: 'rgba(16, 185, 129, 0.8)', size: 8 },
+                hovertemplate: 'Segmento factible<br>x₁: %{x:.3f}<br>x₂: %{y:.3f}<extra></extra>'
+            });
+        } else {
+            // Región es un polígono: ordenar vértices en sentido antihorario para evitar artefactos
+            const sortedVertices = sortVerticesCounterClockwise(vertices);
+            const x1_vertices = sortedVertices.map(v => v[0]);
+            const x2_vertices = sortedVertices.map(v => v[1]);
+            
+            // Cerrar el polígono
+            x1_vertices.push(sortedVertices[0][0]);
+            x2_vertices.push(sortedVertices[0][1]);
+            
+            traces.push({
+                x: x1_vertices,
+                y: x2_vertices,
+                fill: 'toself',
+                fillcolor: 'rgba(16, 185, 129, 0.3)',
                 line: {
-                    color: 'white',
-                    width: 2
-                }
-            },
-            hovertemplate: 'Vértice<br>x₁: %{x:.3f}<br>x₂: %{y:.3f}<extra></extra>'
-        });
+                    color: 'rgba(16, 185, 129, 0.8)',
+                    width: 2,
+                    dash: 'dot'
+                },
+                mode: 'lines',
+                name: 'Región Factible',
+                hoverinfo: 'skip'
+            });
+            
+            // Marcar vértices
+            traces.push({
+                x: sortedVertices.map(v => v[0]),
+                y: sortedVertices.map(v => v[1]),
+                mode: 'markers',
+                name: 'Vértices',
+                marker: {
+                    color: '#10b981',
+                    size: 8,
+                    symbol: 'circle',
+                    line: {
+                        color: 'white',
+                        width: 2
+                    }
+                },
+                hovertemplate: 'Vértice<br>x₁: %{x:.3f}<br>x₂: %{y:.3f}<extra></extra>'
+            });
+        }
     }
     
     // 3. Graficar línea de función objetivo
@@ -350,41 +426,69 @@ function plotResults(data, x1Max, x2Max) {
         }
     }
     
-    // 4. Marcar punto óptimo
-    if (data.optimal_point) {
+    // 4. Marcar punto(s) óptimo(s) y segmentos (si existen múltiples soluciones)
+    if (data.optimal_points && data.optimal_points.length > 0) {
+        const optPts = data.optimal_points;
+
+        // Dibujar todos los puntos óptimos
         traces.push({
-            x: [data.optimal_point[0]],
-            y: [data.optimal_point[1]],
-            mode: 'markers+text',
-            name: 'Solución Óptima',
+            x: optPts.map(p => p[0]),
+            y: optPts.map(p => p[1]),
+            mode: 'markers',
+            name: 'Soluciones Óptimas',
             marker: {
                 color: '#dc2626',
-                size: 20,
+                size: 16,
                 symbol: 'star',
-                line: {
-                    color: 'white',
-                    width: 2
-                }
+                line: { color: 'white', width: 2 }
             },
-            text: ['★ ÓPTIMO'],
-            textposition: 'top center',
-            textfont: {
-                size: 12,
-                color: '#dc2626',
-                family: 'Arial Black'
-            },
-            hovertemplate: `<b>Punto Óptimo</b><br>x₁: ${data.optimal_point[0].toFixed(3)}<br>x₂: ${data.optimal_point[1].toFixed(3)}<br>Z: ${data.optimal_value.toFixed(3)}<extra></extra>`
+            hovertemplate: `Punto Óptimo<br>x₁: %{x:.3f}<br>x₂: %{y:.3f}<br>Z: ${data.optimal_value.toFixed(3)}<extra></extra>`
         });
+
+        // Si hay al menos 2 puntos óptimos, dibujar un segmento entre los 2 más distantes
+        if (optPts.length >= 2) {
+            // Encontrar par con mayor distancia (borde de la cara óptima)
+            let maxDist = -1;
+            let pair = [optPts[0], optPts[0]];
+            for (let i = 0; i < optPts.length; i++) {
+                for (let j = i+1; j < optPts.length; j++) {
+                    const dx = optPts[i][0] - optPts[j][0];
+                    const dy = optPts[i][1] - optPts[j][1];
+                    const d = Math.sqrt(dx*dx + dy*dy);
+                    if (d > maxDist) {
+                        maxDist = d;
+                        pair = [optPts[i], optPts[j]];
+                    }
+                }
+            }
+
+            traces.push({
+                x: [pair[0][0], pair[1][0]],
+                y: [pair[0][1], pair[1][1]],
+                mode: 'lines+markers',
+                name: 'Segmento Óptimo',
+                line: { color: '#b91c1c', width: 4, dash: 'dashdot' },
+                marker: { color: '#b91c1c', size: 8 }
+            });
+        }
     }
     
     // Layout del gráfico
+    // adjust legend orientation for small screens
+    const legendConfig = (window.innerWidth && window.innerWidth < 700) ?
+        {orientation: 'h', x: 0.5, xanchor: 'center', y: -0.2, yanchor: 'top'} :
+        {orientation: 'v', x: 1.05, y: 1};
+
     const layout = {
         title: {
             text: 'Análisis Gráfico de Programación Lineal',
             font: {
-                size: 20,
+                size: (window.innerWidth && window.innerWidth < 700) ? 14 : 20,
                 color: '#1e293b'
-            }
+            },
+            xref: 'paper',
+            x: 0.5,
+            xanchor: 'center'
         },
         xaxis: {
             title: 'x₁',
@@ -406,21 +510,16 @@ function plotResults(data, x1Max, x2Max) {
         },
         hovermode: 'closest',
         showlegend: true,
-        legend: {
-            x: 1.05,
-            y: 1,
+        legend: Object.assign({
             bgcolor: 'rgba(255, 255, 255, 0.9)',
             bordercolor: '#e2e8f0',
             borderwidth: 1
-        },
+        }, legendConfig),
         plot_bgcolor: '#f8fafc',
         paper_bgcolor: 'white',
-        margin: {
-            l: 60,
-            r: 150,
-            t: 80,
-            b: 60
-        }
+        margin: (window.innerWidth && window.innerWidth < 700) ?
+            {l: 40, r: 15, t: 60, b: 120} :
+            {l: 60, r: 150, t: 80, b: 60}
     };
     
     const config = {
@@ -432,6 +531,26 @@ function plotResults(data, x1Max, x2Max) {
     
     document.getElementById('plot').style.display = 'block';
     Plotly.newPlot('plot', traces, layout, config);
+}
+
+// Función auxiliar: ordenar vértices en sentido antihorario para evitar artefactos en el fill
+function sortVerticesCounterClockwise(vertices) {
+    if (vertices.length < 3) {
+        return vertices;
+    }
+    
+    // Calcular el centroide
+    const cx = vertices.reduce((sum, v) => sum + v[0], 0) / vertices.length;
+    const cy = vertices.reduce((sum, v) => sum + v[1], 0) / vertices.length;
+    
+    // Ordenar por ángulo desde el centroide
+    const sorted = vertices.slice().sort((a, b) => {
+        const angleA = Math.atan2(a[1] - cy, a[0] - cx);
+        const angleB = Math.atan2(b[1] - cy, b[0] - cx);
+        return angleA - angleB;
+    });
+    
+    return sorted;
 }
 
 // Inicializar con ejemplo al cargar la página
