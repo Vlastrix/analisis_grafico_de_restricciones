@@ -3,12 +3,34 @@ Aplicación Flask para Análisis Gráfico de Restricciones en Programación Line
 Permite resolver y visualizar problemas de PL con 2 variables
 """
 
-from flask import Flask, render_template, request, jsonify, send_from_directory, Response
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response, send_file
 import os
+import re
 import numpy as np
 from scipy.optimize import linprog
 from scipy.spatial import HalfspaceIntersection, ConvexHull
 import json
+from datetime import datetime
+from io import BytesIO
+import base64
+
+# Librerías para exportación
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+import plotly.graph_objects as go
+import matplotlib
+matplotlib.use('Agg')  # Backend sin interfaz gráfica
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon as MplPolygon
 
 app = Flask(__name__)
 
@@ -16,8 +38,18 @@ def parse_constraint(constraint_str):
     """
     Parsea una restricción del formato: '2*x1 + 3*x2 <= 10'
     Retorna: coeficientes [a1, a2] y el valor b, y el tipo de restricción
+    Lanza ValueError si la restricción es inválida
     """
     try:
+        original_str = constraint_str
+        
+        # Validar que solo contenga x1 y x2 (no x3, x4, etc.)
+        if re.search(r'x[3-9]|x\d\d+', constraint_str, re.IGNORECASE):
+            raise ValueError(
+                "El método gráfico solo funciona con 2 variables (x1 y x2). "
+                "Encontró variables adicionales (x3, x4, etc.) en la restricción: " + original_str
+            )
+        
         # Reemplazar operadores
         constraint_str = constraint_str.replace('x1', 'x[0]').replace('x2', 'x[1]')
         constraint_str = constraint_str.replace('X1', 'x[0]').replace('X2', 'x[1]')
@@ -33,10 +65,18 @@ def parse_constraint(constraint_str):
             op = '='
             left, right = constraint_str.split('=')
         else:
-            raise ValueError("Operador no válido")
+            raise ValueError(
+                "Operador no válido en restricción: " + original_str + 
+                ". Use <=, >= o ="
+            )
         
         # Evaluar el lado derecho (valor b)
-        b = float(eval(right.strip()))
+        try:
+            b = float(eval(right.strip()))
+        except:
+            raise ValueError(
+                "El lado derecho de la restricción debe ser un número: " + original_str
+            )
         
         # Extraer coeficientes del lado izquierdo
         left = left.strip()
@@ -55,10 +95,19 @@ def parse_constraint(constraint_str):
         a1 = val1 - val0
         a2 = val2 - val0
         
+        # Validar que al menos un coeficiente sea no-cero
+        if abs(a1) < 1e-10 and abs(a2) < 1e-10:
+            raise ValueError(
+                "La restricción no contiene variables x1 o x2: " + original_str
+            )
+        
         return [a1, a2], b, op
     
+    except ValueError as e:
+        # Re-lanzar errores de validación con mensaje claro
+        raise e
     except Exception as e:
-        raise ValueError(f"Error al parsear restricción: {str(e)}")
+        raise ValueError(f"Error al parsear restricción '{original_str}': {str(e)}")
 
 def find_feasible_region(constraints, bounds):
     """
@@ -256,6 +305,523 @@ def solve_lp(objective_coeffs, constraints, is_maximize, bounds):
         print(f"Error al resolver LP: {str(e)}")
         return None, None, 'error'
 
+def generate_solution_steps(data, result, format_type='default'):
+    """
+    Genera los pasos de resolución del problema de PL
+    format_type: 'default' usa subscripts unicode, 'pdf' usa formato simple para compatibilidad
+    """
+    steps = []
+    
+    # Determinar formato de variables según el tipo
+    if format_type == 'pdf':
+        x1, x2 = 'x1', 'x2'
+    else:
+        x1, x2 = 'x₁', 'x₂'
+    
+    # Paso 1: Definición del problema
+    obj_type = "Maximizar" if result.get('is_maximize') else "Minimizar"
+    obj_coeffs = result.get('objective_coeffs', [0, 0])
+    
+    steps.append({
+        'title': 'Paso 1: Definición del Problema',
+        'content': f"{obj_type} Z = {obj_coeffs[0]}{x1} + {obj_coeffs[1]}{x2}"
+    })
+    
+    # Paso 2: Restricciones
+    constraints_text = "Sujeto a:\n"
+    for i, constraint in enumerate(result.get('constraint_lines', []), 1):
+        coeffs = constraint['coeffs']
+        b = constraint['b']
+        op = constraint['op']
+        constraints_text += f"  {i}. {coeffs[0]}{x1} + {coeffs[1]}{x2} {op} {b}\n"
+    constraints_text += f"  {x1}, {x2} >= 0 (No negatividad)"
+    
+    steps.append({
+        'title': 'Paso 2: Restricciones del Problema',
+        'content': constraints_text
+    })
+    
+    # Paso 3: Región factible
+    vertices = result.get('vertices', [])
+    vertices_text = f"Se identificaron {len(vertices)} vértices de la región factible:\n"
+    for i, v in enumerate(vertices, 1):
+        vertices_text += f"  V{i} = ({v[0]:.4f}, {v[1]:.4f})\n"
+    
+    steps.append({
+        'title': 'Paso 3: Identificación de Vértices',
+        'content': vertices_text
+    })
+    
+    # Paso 4: Evaluación de la función objetivo
+    if result.get('success') and result.get('optimal_value') is not None:
+        eval_text = "Evaluación de Z en cada vértice:\n"
+        for i, v in enumerate(vertices, 1):
+            z_value = obj_coeffs[0] * v[0] + obj_coeffs[1] * v[1]
+            eval_text += f"  Z(V{i}) = {obj_coeffs[0]}({v[0]:.4f}) + {obj_coeffs[1]}({v[1]:.4f}) = {z_value:.4f}\n"
+        
+        steps.append({
+            'title': 'Paso 4: Evaluación de la Función Objetivo',
+            'content': eval_text
+        })
+        
+        # Paso 5: Solución óptima
+        optimal_point = result.get('optimal_point', [0, 0])
+        optimal_value = result.get('optimal_value', 0)
+        solution_text = f"Punto óptimo: ({optimal_point[0]:.4f}, {optimal_point[1]:.4f})\n"
+        solution_text += f"Valor óptimo: Z* = {optimal_value:.4f}"
+        
+        steps.append({
+            'title': 'Paso 5: Solución Óptima',
+            'content': solution_text
+        })
+    
+    return steps
+
+def create_plotly_image(result, x1_max=10, x2_max=10):
+    """
+    Crea una imagen del gráfico usando Plotly
+    """
+    try:
+        fig = go.Figure()
+        
+        # Región factible
+        if result.get('vertices'):
+            vertices = result['vertices']
+            if len(vertices) >= 3:
+                # Cerrar el polígono
+                vertices_closed = vertices + [vertices[0]]
+                x_coords = [v[0] for v in vertices_closed]
+                y_coords = [v[1] for v in vertices_closed]
+                
+                fig.add_trace(go.Scatter(
+                    x=x_coords,
+                    y=y_coords,
+                    fill='toself',
+                    fillcolor='rgba(135, 206, 250, 0.3)',
+                    line=dict(color='blue', width=2),
+                    name='Región Factible'
+                ))
+            
+            # Vértices
+            x_vert = [v[0] for v in vertices]
+            y_vert = [v[1] for v in vertices]
+            fig.add_trace(go.Scatter(
+                x=x_vert,
+                y=y_vert,
+                mode='markers',
+                marker=dict(size=10, color='blue'),
+                name='Vértices'
+            ))
+        
+        # Punto óptimo
+        if result.get('optimal_point'):
+            opt = result['optimal_point']
+            fig.add_trace(go.Scatter(
+                x=[opt[0]],
+                y=[opt[1]],
+                mode='markers',
+                marker=dict(size=15, color='red', symbol='star'),
+                name=f'Óptimo: ({opt[0]:.2f}, {opt[1]:.2f})'
+            ))
+        
+        # Líneas de restricciones
+        for constraint in result.get('constraint_lines', []):
+            coeffs = constraint['coeffs']
+            b = constraint['b']
+            
+            if coeffs[1] != 0:
+                x_line = np.linspace(0, x1_max, 100)
+                y_line = (b - coeffs[0] * x_line) / coeffs[1]
+                
+                fig.add_trace(go.Scatter(
+                    x=x_line,
+                    y=y_line,
+                    mode='lines',
+                    line=dict(dash='dash', width=1),
+                    name=constraint.get('label', f"Restricción {coeffs}")
+                ))
+        
+        fig.update_layout(
+            title='Análisis Gráfico del Problema de PL',
+            xaxis_title='x₁',
+            yaxis_title='x₂',
+            xaxis=dict(range=[0, x1_max]),
+            yaxis=dict(range=[0, x2_max]),
+            showlegend=True,
+            width=800,
+            height=600
+        )
+        
+        # Convertir a imagen - intentar con kaleido
+        print("Generando imagen con Plotly...")
+        
+        try:
+            img_bytes = fig.to_image(format="png", engine="kaleido")
+            print("Imagen generada exitosamente con kaleido")
+            return img_bytes
+        except Exception as e:
+            print(f"Kaleido falló: {e}")
+            # Si kaleido falla, retornar None y continuar sin imagen
+            return None
+            
+    except Exception as e:
+        print(f"Error al generar imagen de Plotly: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def create_matplotlib_image(result, x1_max=10, x2_max=10):
+    """
+    Crea una imagen del gráfico usando Matplotlib (más confiable que Kaleido)
+    """
+    try:
+        print("Generando imagen con Matplotlib...")
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Colores
+        colors_list = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+        
+        # Dibujar líneas de restricciones
+        for idx, constraint in enumerate(result.get('constraint_lines', [])):
+            coeffs = constraint['coeffs']
+            b = constraint['b']
+            color = colors_list[idx % len(colors_list)]
+            
+            if coeffs[1] != 0:
+                x_line = np.linspace(0, x1_max, 100)
+                y_line = (b - coeffs[0] * x_line) / coeffs[1]
+                # Filtrar valores dentro del rango
+                mask = (y_line >= 0) & (y_line <= x2_max)
+                ax.plot(x_line[mask], y_line[mask], '--', color=color, linewidth=2, 
+                       label=constraint.get('label', f"Restricción {idx+1}"), alpha=0.7)
+            elif coeffs[0] != 0:
+                # Línea vertical
+                x_val = b / coeffs[0]
+                if 0 <= x_val <= x1_max:
+                    ax.axvline(x=x_val, color=color, linestyle='--', linewidth=2,
+                             label=constraint.get('label', f"Restricción {idx+1}"), alpha=0.7)
+        
+        # Dibujar región factible
+        if result.get('vertices') and len(result['vertices']) >= 3:
+            vertices = result['vertices']
+            # Ordenar vértices
+            vertices_array = np.array(vertices)
+            # Calcular centroide
+            cx = np.mean(vertices_array[:, 0])
+            cy = np.mean(vertices_array[:, 1])
+            # Ordenar por ángulo
+            angles = np.arctan2(vertices_array[:, 1] - cy, vertices_array[:, 0] - cx)
+            sorted_indices = np.argsort(angles)
+            sorted_vertices = vertices_array[sorted_indices]
+            
+            # Crear polígono
+            polygon = MplPolygon(sorted_vertices, alpha=0.3, facecolor='lightblue', 
+                                edgecolor='blue', linewidth=2, label='Región Factible')
+            ax.add_patch(polygon)
+            
+            # Dibujar vértices
+            ax.scatter(sorted_vertices[:, 0], sorted_vertices[:, 1], 
+                      color='blue', s=100, zorder=5, label='Vértices', marker='o')
+        
+        # Dibujar punto óptimo
+        if result.get('optimal_point'):
+            opt = result['optimal_point']
+            ax.scatter([opt[0]], [opt[1]], color='red', s=300, zorder=10,
+                      label=f'Óptimo ({opt[0]:.2f}, {opt[1]:.2f})', marker='*')
+        
+        # Configurar ejes
+        ax.set_xlim(0, x1_max)
+        ax.set_ylim(0, x2_max)
+        ax.set_xlabel('x₁', fontsize=12, fontweight='bold')
+        ax.set_ylabel('x₂', fontsize=12, fontweight='bold')
+        ax.set_title('Análisis Gráfico del Problema de PL', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best', framealpha=0.9)
+        
+        # Guardar en memoria
+        img_stream = BytesIO()
+        plt.tight_layout()
+        plt.savefig(img_stream, format='png', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        img_stream.seek(0)
+        
+        print("Imagen generada exitosamente con Matplotlib")
+        return img_stream.read()
+        
+    except Exception as e:
+        print(f"Error al generar imagen con Matplotlib: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def export_to_word(data, result):
+    """
+    Exporta el problema y su solución a un documento Word
+    """
+    try:
+        doc = Document()
+        
+        # Título
+        title = doc.add_heading('Análisis de Programación Lineal', 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Fecha
+        date_para = doc.add_paragraph(f'Fecha: {datetime.now().strftime("%d/%m/%Y %H:%M")}')
+        date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        doc.add_paragraph()
+        
+        # Generar pasos
+        steps = generate_solution_steps(data, result, format_type='default')
+        
+        # Agregar cada paso
+        for step in steps:
+            doc.add_heading(step['title'], level=1)
+            
+            # Agregar contenido con formato
+            for line in step['content'].split('\n'):
+                if line.strip():
+                    p = doc.add_paragraph(line)
+                    if line.strip().startswith(('V', 'Z(')):
+                        p.style = 'List Bullet'
+        
+        # Agregar gráfico si está disponible
+        try:
+            x1_max = data.get('x1_max', 10)
+            x2_max = data.get('x2_max', 10)
+            
+            # Usar SOLO Matplotlib (más confiable que Kaleido en Windows)
+            print("Generando imagen con Matplotlib...")
+            img_bytes = create_matplotlib_image(result, x1_max, x2_max)
+            
+            if img_bytes:
+                doc.add_paragraph()  # Espacio en lugar de página nueva
+                doc.add_heading('Visualización Gráfica', level=1)
+                
+                # Guardar temporalmente la imagen
+                img_stream = BytesIO(img_bytes)
+                doc.add_picture(img_stream, width=Inches(6))
+                print("Imagen agregada exitosamente a Word")
+            else:
+                print("No se pudo generar la imagen para Word")
+                doc.add_paragraph()  # Espacio en lugar de página nueva
+                doc.add_heading('Visualización Gráfica', level=1)
+                doc.add_paragraph('Nota: El gráfico no pudo ser generado automáticamente. ')
+                doc.add_paragraph('Por favor, visualiza el gráfico en la aplicación web.')
+        except Exception as e:
+            print(f"Error al agregar gráfico a Word: {e}")
+            import traceback
+            traceback.print_exc()
+            doc.add_paragraph()  # Espacio en lugar de página nueva
+            doc.add_heading('Visualización Gráfica', level=1)
+            doc.add_paragraph('Nota: El gráfico no pudo ser generado automáticamente. ')
+            doc.add_paragraph('Por favor, visualiza el gráfico en la aplicación web.')
+        
+        # Guardar en memoria
+        file_stream = BytesIO()
+        doc.save(file_stream)
+        file_stream.seek(0)
+        
+        return file_stream
+    except Exception as e:
+        print(f"Error general en export_to_word: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+def export_to_pdf(data, result):
+    """
+    Exporta el problema y su solución a PDF
+    """
+    try:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Estilo personalizado
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#2c3e50'),
+            spaceAfter=30,
+            alignment=1  # Centrado
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#3498db'),
+            spaceAfter=12,
+            spaceBefore=12
+        )
+        
+        # Título
+        elements.append(Paragraph('Análisis de Programación Lineal', title_style))
+        elements.append(Paragraph(f'Fecha: {datetime.now().strftime("%d/%m/%Y %H:%M")}', styles['Normal']))
+        elements.append(Spacer(1, 20))
+        
+        # Generar pasos con formato PDF (sin unicode especial)
+        steps = generate_solution_steps(data, result, format_type='pdf')
+        
+        # Agregar cada paso
+        for step in steps:
+            elements.append(Paragraph(step['title'], heading_style))
+            
+            # Agregar contenido
+            for line in step['content'].split('\n'):
+                if line.strip():
+                    # Escapar caracteres especiales para XML
+                    safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    elements.append(Paragraph(safe_line, styles['Normal']))
+                    elements.append(Spacer(1, 6))
+            
+            elements.append(Spacer(1, 12))
+        
+        # Agregar gráfico
+        try:
+            x1_max = data.get('x1_max', 10)
+            x2_max = data.get('x2_max', 10)
+            
+            # Usar SOLO Matplotlib (más confiable que Kaleido en Windows)
+            print("Generando imagen con Matplotlib...")
+            img_bytes = create_matplotlib_image(result, x1_max, x2_max)
+            
+            if img_bytes:
+                img_stream = BytesIO(img_bytes)
+                img = RLImage(img_stream, width=5*inch, height=3.75*inch)
+                elements.append(Spacer(1, 20))
+                elements.append(Paragraph('Visualización Gráfica', heading_style))
+                elements.append(img)
+                print("Imagen agregada exitosamente a PDF")
+            else:
+                print("No se pudo generar la imagen para PDF")
+                elements.append(Spacer(1, 20))
+                elements.append(Paragraph('Visualización Gráfica', heading_style))
+                elements.append(Paragraph('Nota: El gráfico no pudo ser generado automáticamente. Por favor, visualiza el gráfico en la aplicación web.', styles['Normal']))
+        except Exception as e:
+            print(f"Error al agregar gráfico al PDF: {e}")
+            import traceback
+            traceback.print_exc()
+            elements.append(Spacer(1, 20))
+            elements.append(Paragraph('Visualización Gráfica', heading_style))
+            elements.append(Paragraph('Nota: El gráfico no pudo ser generado automáticamente. Por favor, visualiza el gráfico en la aplicación web.', styles['Normal']))
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        print(f"Error general en export_to_pdf: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+def export_to_excel(data, result):
+    """
+    Exporta el problema y su solución a Excel
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Análisis PL"
+    
+    # Estilos
+    header_fill = PatternFill(start_color="3498db", end_color="3498db", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    title_font = Font(bold=True, size=16, color="2c3e50")
+    
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    row = 1
+    
+    # Título
+    ws.merge_cells(f'A{row}:D{row}')
+    cell = ws[f'A{row}']
+    cell.value = 'ANÁLISIS DE PROGRAMACIÓN LINEAL'
+    cell.font = title_font
+    cell.alignment = Alignment(horizontal='center', vertical='center')
+    row += 1
+    
+    # Fecha
+    ws.merge_cells(f'A{row}:D{row}')
+    ws[f'A{row}'] = f'Fecha: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
+    ws[f'A{row}'].alignment = Alignment(horizontal='right')
+    row += 2
+    
+    # Generar pasos con formato simple
+    steps = generate_solution_steps(data, result, format_type='default')
+    
+    for step in steps:
+        # Título del paso
+        ws.merge_cells(f'A{row}:D{row}')
+        cell = ws[f'A{row}']
+        cell.value = step['title']
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='left', vertical='center')
+        cell.border = border
+        row += 1
+        
+        # Contenido del paso
+        for line in step['content'].split('\n'):
+            if line.strip():
+                ws.merge_cells(f'A{row}:D{row}')
+                ws[f'A{row}'] = line
+                ws[f'A{row}'].alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                row += 1
+        
+        row += 1
+    
+    # Tabla de vértices
+    if result.get('vertices'):
+        row += 1
+        ws[f'A{row}'] = 'Vértice'
+        ws[f'B{row}'] = 'x₁'
+        ws[f'C{row}'] = 'x₂'
+        ws[f'D{row}'] = 'Z'
+        
+        for col in ['A', 'B', 'C', 'D']:
+            cell = ws[f'{col}{row}']
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+        
+        row += 1
+        
+        obj_coeffs = result.get('objective_coeffs', [0, 0])
+        for i, v in enumerate(result['vertices'], 1):
+            z_value = obj_coeffs[0] * v[0] + obj_coeffs[1] * v[1]
+            ws[f'A{row}'] = f'V{i}'
+            ws[f'B{row}'] = round(v[0], 4)
+            ws[f'C{row}'] = round(v[1], 4)
+            ws[f'D{row}'] = round(z_value, 4)
+            
+            for col in ['A', 'B', 'C', 'D']:
+                ws[f'{col}{row}'].border = border
+                ws[f'{col}{row}'].alignment = Alignment(horizontal='center')
+            
+            row += 1
+    
+    # Ajustar anchos de columna
+    ws.column_dimensions['A'].width = 30
+    ws.column_dimensions['B'].width = 15
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 15
+    
+    # Guardar en memoria
+    file_stream = BytesIO()
+    wb.save(file_stream)
+    file_stream.seek(0)
+    
+    return file_stream
+
 @app.route('/')
 def index():
     """Página principal"""
@@ -263,10 +829,12 @@ def index():
 
 @app.route('/solve', methods=['POST'])
 def solve():
-    """Endpoint para resolver el problema de PL"""
+    """Endpoint para resolver el problema de PL con validaciones completas"""
     try:
         data = request.get_json(force=True)
 
+        # ===== VALIDACIONES BACKEND =====
+        
         # --- Parsear función objetivo (soporta dos formatos) ---
         # Formato estructurado: { "objective": { "sense": "max", "coefficients": [3,4] } }
         # Formato antiguo: campos individuales obj_x1 / obj_x2 y objective_type
@@ -288,32 +856,84 @@ def solve():
             ]
             is_maximize = data.get('objective_type', 'maximize') == 'maximize'
 
+        # 1. Validar función objetivo
+        if obj_coeffs[0] == 0 and obj_coeffs[1] == 0:
+            return jsonify({
+                'success': False,
+                'error': 'La función objetivo no puede tener todos los coeficientes en cero. Debe especificar al menos un coeficiente no nulo para x1 o x2.'
+            })
+        
+        if not isinstance(obj_coeffs[0], (int, float)) or not isinstance(obj_coeffs[1], (int, float)):
+            return jsonify({
+                'success': False,
+                'error': 'Los coeficientes de la función objetivo deben ser números válidos.'
+            })
+
         # --- Parsear restricciones (soporta cadenas y objetos) ---
         constraints = []
         constraint_inputs = data.get('constraints', [])
+        
+        # 2. Validar que haya restricciones
+        if not constraint_inputs or len(constraint_inputs) == 0:
+            return jsonify({
+                'success': False,
+                'error': 'Debe ingresar al menos una restricción para resolver el problema de programación lineal.'
+            })
+        
+        # 3. Validar número máximo de restricciones (límite razonable)
+        if len(constraint_inputs) > 20:
+            return jsonify({
+                'success': False,
+                'error': f'Demasiadas restricciones ({len(constraint_inputs)}). El método gráfico funciona mejor con 20 o menos restricciones.'
+            })
 
-        for item in constraint_inputs:
+        for idx, item in enumerate(constraint_inputs, 1):
             # Si llega un objeto con coeficientes y rhs
             if isinstance(item, dict):
                 try:
                     coeffs = item.get('coefficients') or item.get('coeff')
                     b = item.get('rhs') if 'rhs' in item else item.get('b')
                     op = item.get('op') if 'op' in item else item.get('operator', '<=')
+                    
                     if coeffs is None or b is None:
-                        return jsonify({'success': False, 'error': f"Restricción incompleta: {item}"})
+                        return jsonify({
+                            'success': False,
+                            'error': f"Restricción {idx} incompleta: faltan coeficientes o valor del lado derecho."
+                        })
+                    
+                    # Validar que solo haya 2 coeficientes
+                    if len(coeffs) != 2:
+                        return jsonify({
+                            'success': False,
+                            'error': f"Restricción {idx}: El método gráfico solo funciona con 2 variables (x1 y x2). Encontró {len(coeffs)} variables."
+                        })
+                    
                     constraints.append(([float(coeffs[0]), float(coeffs[1])], float(b), str(op)))
+                except ValueError as ve:
+                    return jsonify({'success': False, 'error': f"Restricción {idx}: {str(ve)}"})
                 except Exception as e:
-                    return jsonify({'success': False, 'error': f"Error en restricción estructurada {item}: {str(e)}"})
+                    return jsonify({'success': False, 'error': f"Error en restricción {idx}: {str(e)}"})
             else:
                 # Texto: "2*x1 + x2 <= 10"
                 try:
                     if isinstance(item, str) and item.strip():
                         parsed = parse_constraint(item)
                         constraints.append(parsed)
+                    elif not item or (isinstance(item, str) and not item.strip()):
+                        return jsonify({
+                            'success': False,
+                            'error': f"Restricción {idx} está vacía. Por favor, elimínela o complétela."
+                        })
+                except ValueError as ve:
+                    # Error específico de validación
+                    return jsonify({
+                        'success': False,
+                        'error': f"Restricción {idx}: {str(ve)}"
+                    })
                 except Exception as e:
                     return jsonify({
                         'success': False,
-                        'error': f"Error en restricción '{item}': {str(e)}"
+                        'error': f"Error al procesar restricción {idx} ('{item}'): {str(e)}"
                     })
 
         # Obtener límites para el gráfico (soporta campo 'bounds' o x1_max/x2_max)
@@ -344,6 +964,28 @@ def solve():
             x1_max = data.get('x1_max', 20)
         if x2_max is None:
             x2_max = data.get('x2_max', 20)
+        
+        # 4. Validar límites del gráfico
+        try:
+            x1_max = float(x1_max)
+            x2_max = float(x2_max)
+            
+            if x1_max <= 0 or x2_max <= 0:
+                return jsonify({
+                    'success': False,
+                    'error': 'Los límites del gráfico (x₁ max y x₂ max) deben ser mayores que cero.'
+                })
+            
+            if x1_max > 100000 or x2_max > 100000:
+                return jsonify({
+                    'success': False,
+                    'error': 'Los límites del gráfico son demasiado grandes. Use valores menores a 100,000 para mejor visualización.'
+                })
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'error': 'Los límites del gráfico deben ser números válidos.'
+            })
 
         bounds = {
             'x1_max': None if x1_max is None else float(x1_max),
@@ -454,6 +1096,88 @@ def solve():
             'success': False,
             'error': str(e)
         })
+
+@app.route('/export/word', methods=['POST'])
+def export_word():
+    """Endpoint para exportar a Word"""
+    try:
+        print("=== Iniciando exportación a Word ===")
+        data = request.get_json()
+        print(f"Datos recibidos: {data.keys() if data else 'None'}")
+        
+        result = data.get('result', {})
+        original_data = data.get('data', {})
+        
+        print("Llamando a export_to_word...")
+        file_stream = export_to_word(original_data, result)
+        print("Archivo Word generado exitosamente")
+        
+        return send_file(
+            file_stream,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            as_attachment=True,
+            download_name=f'analisis_pl_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
+        )
+    except Exception as e:
+        print(f"ERROR en export_word: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/export/pdf', methods=['POST'])
+def export_pdf():
+    """Endpoint para exportar a PDF"""
+    try:
+        print("=== Iniciando exportación a PDF ===")
+        data = request.get_json()
+        print(f"Datos recibidos: {data.keys() if data else 'None'}")
+        
+        result = data.get('result', {})
+        original_data = data.get('data', {})
+        
+        print("Llamando a export_to_pdf...")
+        file_stream = export_to_pdf(original_data, result)
+        print("Archivo PDF generado exitosamente")
+        
+        return send_file(
+            file_stream,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'analisis_pl_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
+        )
+    except Exception as e:
+        print(f"ERROR en export_pdf: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+        
+        return send_file(
+            file_stream,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'analisis_pl_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/export/excel', methods=['POST'])
+def export_excel():
+    """Endpoint para exportar a Excel"""
+    try:
+        data = request.get_json()
+        result = data.get('result', {})
+        original_data = data.get('data', {})
+        
+        file_stream = export_to_excel(original_data, result)
+        
+        return send_file(
+            file_stream,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'analisis_pl_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -11,6 +11,7 @@ Aplicación web educativa e interactiva para resolver y visualizar problemas de 
 - Soporte para problemas de maximización y minimización
 - Gráficos interactivos con Plotly.js
 - Herramienta educativa ideal para estudiantes de Investigación de Operaciones
+- **🆕 Exportación completa a Word, PDF y Excel con pasos de resolución detallados**
 
 ## Instalación
 
@@ -87,6 +88,71 @@ Sujeto a:
 
 3. Hacer clic en "Resolver y Graficar"
 
+4. **Exportar resultados** (nueva funcionalidad):
+   - Una vez resuelto el problema, aparecerán botones de exportación
+   - Haz clic en el formato deseado (Word, PDF o Excel)
+   - Se descargará un documento completo con toda la solución paso a paso
+
+## 📤 Exportación de Resultados
+
+### ¿Qué incluye cada exportación?
+
+Todos los formatos incluyen los siguientes pasos detallados:
+
+1. **Paso 1: Definición del Problema**
+   - Función objetivo completa
+   - Tipo de optimización (maximizar/minimizar)
+
+2. **Paso 2: Restricciones del Problema**
+   - Lista completa de todas las restricciones
+   - Restricciones de no negatividad
+
+3. **Paso 3: Identificación de Vértices**
+   - Coordenadas exactas de todos los vértices de la región factible
+
+4. **Paso 4: Evaluación de la Función Objetivo**
+   - Valor de Z en cada uno de los vértices encontrados
+   - Cálculo detallado para cada punto
+
+5. **Paso 5: Solución Óptima**
+   - Punto óptimo (coordenadas exactas)
+   - Valor óptimo de la función objetivo
+
+6. **Visualización Gráfica** (Word y PDF)
+   - Gráfico completo de la región factible
+   - Restricciones, vértices y punto óptimo marcados
+
+### Formatos Disponibles
+
+#### 📄 Word (.docx)
+- Documento profesional con formato estructurado
+- Incluye el gráfico en alta calidad
+- Ideal para reportes y trabajos académicos
+- Fácilmente editable
+
+#### 📕 PDF
+- Reporte imprimible con diseño optimizado
+- Perfecto para presentaciones
+- Formato universal compatible con todos los dispositivos
+- No requiere software especial para visualizar
+
+#### 📊 Excel (.xlsx)
+- Hoja de cálculo con datos estructurados
+- Tabla detallada de vértices con evaluaciones
+- Formato ideal para análisis adicionales
+- Fácil de importar a otros programas
+
+### Cómo Exportar
+
+1. Resuelve tu problema de programación lineal
+2. Revisa los resultados en pantalla
+3. Desplázate al panel de resultados
+4. Haz clic en el botón del formato deseado:
+   - 🗎 Exportar a Word
+   - 📕 Exportar a PDF
+   - 📊 Exportar a Excel
+5. El archivo se descargará automáticamente
+
 ## Tecnologías Utilizadas
 
 - **Backend**: Flask (Python)
@@ -94,6 +160,11 @@ Sujeto a:
 - **Cálculos**: NumPy
 - **Visualización**: Plotly.js
 - **Frontend**: HTML5, CSS3, JavaScript
+- **Exportación**:
+  - python-docx (Word)
+  - reportlab (PDF)
+  - openpyxl (Excel)
+  - plotly + kaleido (generación de imágenes)
 
 ## Componentes de la Visualización
 
@@ -102,6 +173,7 @@ Sujeto a:
 3. **Línea de Función Objetivo**: Línea roja punteada que representa valores constantes de la función objetivo
 4. **Punto Óptimo**: Marcador rojo grande que indica la solución óptima
 5. **Información Detallada**: Panel lateral con valores exactos de la solución
+6. **Botones de Exportación**: Acceso rápido a exportar en múltiples formatos
 
 ## Aplicaciones Educativas
 
@@ -111,6 +183,8 @@ Esta herramienta es ideal para:
 - Aprendizaje visual de conceptos de PL
 - Verificación rápida de problemas de tarea
 - Demostración en clase de métodos gráficos
+- **Generación de reportes de laboratorio**
+- **Documentación de soluciones para entregas académicas**
 
 ## Limitaciones
 

@@ -122,15 +122,110 @@ async function solveProblem() {
     const x1Max = parseFloat(document.getElementById('x1_max').value) || 20;
     const x2Max = parseFloat(document.getElementById('x2_max').value) || 20;
     
-    // Validaciones básicas
+    // ===== VALIDACIONES FRONTEND =====
+    
+    // 1. Validar que haya al menos una restricción
     if (constraints.length === 0) {
-        showError('Debe ingresar al menos una restricción');
+        showError('Debe ingresar al menos una restricción para resolver el problema.');
         return;
     }
     
+    // 2. Validar función objetivo
     if (objX1 === 0 && objX2 === 0) {
-        showError('La función objetivo no puede ser cero');
+        showError('La función objetivo no puede tener todos los coeficientes en cero.');
         return;
+    }
+    
+    if (isNaN(objX1) || isNaN(objX2)) {
+        showError('Los coeficientes de la función objetivo deben ser números válidos.');
+        return;
+    }
+    
+    // 3. Validar límites del gráfico
+    if (x1Max <= 0 || x2Max <= 0) {
+        showError('Los límites del gráfico (x₁ max y x₂ max) deben ser mayores que cero.');
+        return;
+    }
+    
+    if (x1Max > 10000 || x2Max > 10000) {
+        showError('Los límites del gráfico son demasiado grandes. Use valores menores a 10,000.');
+        return;
+    }
+    
+    // 4. Validar restricciones: SOLO x1 y x2 (método gráfico)
+    const invalidVariables = [];
+    const emptyConstraints = [];
+    const invalidOperators = [];
+    
+    for (let i = 0; i < constraints.length; i++) {
+        const constraint = constraints[i];
+        
+        // Revisar si está vacía
+        if (!constraint || constraint.trim() === '') {
+            emptyConstraints.push(i + 1);
+            continue;
+        }
+        
+        // Detectar variables no permitidas (x3, x4, x5, etc.)
+        const hasX3orMore = /x[3-9]|x\d\d+/i.test(constraint);
+        if (hasX3orMore) {
+            invalidVariables.push(i + 1);
+        }
+        
+        // Verificar que tenga un operador válido
+        const hasValidOperator = /<= | >= | = | <= | >= /i.test(constraint) || 
+                                 /<=|>=|=/i.test(constraint);
+        if (!hasValidOperator) {
+            invalidOperators.push(i + 1);
+        }
+    }
+    
+    // Mostrar errores específicos
+    if (invalidVariables.length > 0) {
+        showError(
+            `El método gráfico solo funciona con 2 variables (x1 y x2).\n\n` +
+            `Las restricciones ${invalidVariables.join(', ')} contienen variables adicionales (x3, x4, etc.).\n\n` +
+            `Por favor, reformule su problema usando únicamente x1 y x2.`
+        );
+        return;
+    }
+    
+    if (emptyConstraints.length > 0) {
+        showError(`Las restricciones ${emptyConstraints.join(', ')} están vacías. Por favor, elimínelas o complételas.`);
+        return;
+    }
+    
+    if (invalidOperators.length > 0) {
+        showError(
+            `Las restricciones ${invalidOperators.join(', ')} no tienen un operador válido.\n\n` +
+            `Use: <= (menor o igual), >= (mayor o igual), o = (igual).\n\n` +
+            `Ejemplo: 2*x1 + 3*x2 <= 10`
+        );
+        return;
+    }
+    
+    // 5. Validar formato básico de restricciones
+    for (let i = 0; i < constraints.length; i++) {
+        const constraint = constraints[i];
+        
+        // Verificar que contenga x1 o x2
+        if (!/x1|x2/i.test(constraint)) {
+            showError(
+                `La restricción ${i + 1} no contiene las variables x1 o x2.\n\n` +
+                `Ejemplo válido: x1 + x2 <= 10`
+            );
+            return;
+        }
+        
+        // Verificar que no tenga caracteres extraños
+        const cleanConstraint = constraint.replace(/[x1x2X1X2\d\s+\-*/()<=>.]/g, '');
+        if (cleanConstraint.length > 0) {
+            showError(
+                `La restricción ${i + 1} contiene caracteres no válidos: "${cleanConstraint}"\n\n` +
+                `Use solo: números, x1, x2, +, -, *, /, (), <=, >=, =`
+            );
+            return;
+        }
     }
     
     // Enviar solicitud al servidor
@@ -254,10 +349,148 @@ function showResults(data) {
             <div class="result-label">Número de Vértices</div>
             <div class="result-value">${data.vertices.length}</div>
         </div>`;
+    
+    // Agregar botones de exportación
+    optimalHtml += `
+        <div class="export-buttons">
+            <h3 style="margin-top: 20px; margin-bottom: 10px">
+                <i class="fas fa-file-export"></i> Exportar Resultados
+            </h3>
+            <button class="btn-export" onclick="exportToWord()">
+                <i class="fas fa-file-word"></i> Exportar a Word
+            </button>
+            <button class="btn-export" onclick="exportToPDF()">
+                <i class="fas fa-file-pdf"></i> Exportar a PDF
+            </button>
+            <button class="btn-export" onclick="exportToExcel()">
+                <i class="fas fa-file-excel"></i> Exportar a Excel
+            </button>
+        </div>
+    `;
 
     resultsContent.innerHTML = optimalHtml;
     
     resultsPanel.style.display = 'block';
+    
+    // Guardar datos en variable global para exportación
+    window.currentSolutionData = data;
+    window.currentInputData = {
+        obj_x1: parseFloat(document.getElementById('obj_x1').value),
+        obj_x2: parseFloat(document.getElementById('obj_x2').value),
+        objective_type: document.querySelector('input[name="objective_type"]:checked').value,
+        constraints: Array.from(document.getElementsByClassName('constraint-input')).map(i => i.value.trim()).filter(v => v),
+        x1_max: parseFloat(document.getElementById('x1_max').value),
+        x2_max: parseFloat(document.getElementById('x2_max').value)
+    };
+}
+
+// Funciones de exportación
+async function exportToWord() {
+    try {
+        if (!window.currentSolutionData || !window.currentInputData) {
+            alert('No hay resultados para exportar. Por favor, resuelva el problema primero.');
+            return;
+        }
+        
+        const response = await fetch('/export/word', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                data: window.currentInputData,
+                result: window.currentSolutionData
+            })
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `analisis_pl_${new Date().getTime()}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else {
+            alert('Error al exportar a Word');
+        }
+    } catch (error) {
+        alert('Error al exportar: ' + error.message);
+    }
+}
+
+async function exportToPDF() {
+    try {
+        if (!window.currentSolutionData || !window.currentInputData) {
+            alert('No hay resultados para exportar. Por favor, resuelva el problema primero.');
+            return;
+        }
+        
+        const response = await fetch('/export/pdf', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                data: window.currentInputData,
+                result: window.currentSolutionData
+            })
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `analisis_pl_${new Date().getTime()}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else {
+            alert('Error al exportar a PDF');
+        }
+    } catch (error) {
+        alert('Error al exportar: ' + error.message);
+    }
+}
+
+async function exportToExcel() {
+    try {
+        if (!window.currentSolutionData || !window.currentInputData) {
+            alert('No hay resultados para exportar. Por favor, resuelva el problema primero.');
+            return;
+        }
+        
+        const response = await fetch('/export/excel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                data: window.currentInputData,
+                result: window.currentSolutionData
+            })
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `analisis_pl_${new Date().getTime()}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else {
+            alert('Error al exportar a Excel');
+        }
+    } catch (error) {
+        alert('Error al exportar: ' + error.message);
+    }
 }
 
 // Graficar resultados con Plotly
