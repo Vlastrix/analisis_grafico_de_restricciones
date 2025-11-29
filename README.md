@@ -11,7 +11,7 @@ Aplicación web educativa e interactiva para resolver y visualizar problemas de 
 - Soporte para problemas de maximización y minimización
 - Gráficos interactivos con Plotly.js
 - Herramienta educativa ideal para estudiantes de Investigación de Operaciones
-- **🆕 Exportación completa a Word, PDF y Excel con pasos de resolución detallados**
+- **Exportación completa a Word, PDF y Excel con pasos de resolución detallados**
 
 ## Instalación
 
@@ -124,19 +124,19 @@ Todos los formatos incluyen los siguientes pasos detallados:
 
 ### Formatos Disponibles
 
-#### 📄 Word (.docx)
+#### Word (.docx)
 - Documento profesional con formato estructurado
 - Incluye el gráfico en alta calidad
 - Ideal para reportes y trabajos académicos
 - Fácilmente editable
 
-#### 📕 PDF
+#### PDF
 - Reporte imprimible con diseño optimizado
 - Perfecto para presentaciones
 - Formato universal compatible con todos los dispositivos
 - No requiere software especial para visualizar
 
-#### 📊 Excel (.xlsx)
+#### Excel (.xlsx)
 - Hoja de cálculo con datos estructurados
 - Tabla detallada de vértices con evaluaciones
 - Formato ideal para análisis adicionales
@@ -148,9 +148,9 @@ Todos los formatos incluyen los siguientes pasos detallados:
 2. Revisa los resultados en pantalla
 3. Desplázate al panel de resultados
 4. Haz clic en el botón del formato deseado:
-   - 🗎 Exportar a Word
-   - 📕 Exportar a PDF
-   - 📊 Exportar a Excel
+   - Exportar a Word
+   - Exportar a PDF
+   - Exportar a Excel
 5. El archivo se descargará automáticamente
 
 ## Tecnologías Utilizadas
