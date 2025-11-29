@@ -207,7 +207,7 @@ Este proyecto es de código abierto y está disponible para uso educativo.
 
 ## Autores
 
-Vladislav Bochkov y Ender Rosales Condoli
+Vladislav Bochkov, Ender Rosales Condoli y Santiago Corminola
 
 ## Reporte de Bugs
 
