@@ -790,3 +790,79 @@ function sortVerticesCounterClockwise(vertices) {
 window.addEventListener('DOMContentLoaded', () => {
     console.log('Aplicación de Programación Lineal cargada');
 });
+
+// Función para mostrar descripción del ejemplo
+function showExampleDescription(exampleNum) {
+    const modal = document.getElementById('exampleModal');
+    const modalBody = document.getElementById('modalBody');
+    
+    let description = '';
+    
+    if (exampleNum === 1) {
+        description = `
+            <h3>Fábrica de Muebles</h3>
+            <p><strong>Contexto:</strong></p>
+            <p>Una carpintería fabrica <strong>sillas</strong> y <strong>mesas</strong>, y desea maximizar sus ganancias semanales.</p>
+            
+            <p><strong>Datos del problema:</strong></p>
+            <ul>
+                <li><strong>Ganancia:</strong> Cada silla genera $3 de ganancia y cada mesa genera $2 de ganancia.</li>
+                <li><strong>Madera:</strong> Cada silla requiere 2 metros de madera y cada mesa requiere 1 metro. Hay 10 metros disponibles por semana.</li>
+                <li><strong>Horas de Trabajo:</strong> Cada silla requiere 1 hora de trabajo y cada mesa requiere 2 horas. Hay 8 horas disponibles por semana.</li>
+                <li><strong>Espacio de Almacén:</strong> El almacén solo puede guardar máximo 4 sillas por semana.</li>
+            </ul>
+            
+            <p><strong>Objetivo:</strong> Determinar cuántas sillas y mesas fabricar cada semana para maximizar la ganancia total.</p>
+        `;
+    } else if (exampleNum === 2) {
+        description = `
+            <h3>Fábrica de Electrónica</h3>
+            <p><strong>Contexto:</strong></p>
+            <p>Una fábrica de electrónica produce <strong>laptops</strong> y <strong>tablets</strong>, y necesita optimizar su producción para maximizar ingresos mensuales.</p>
+            
+            <p><strong>Datos del problema:</strong></p>
+            <ul>
+                <li><strong>Ingresos:</strong> Cada laptop genera $40 de ingreso y cada tablet genera $30 de ingreso.</li>
+                <li><strong>Línea de Ensamblaje 1:</strong> Cada laptop requiere 1 hora y cada tablet requiere 2 horas. Disponibilidad: 12 horas por día.</li>
+                <li><strong>Línea de Ensamblaje 2:</strong> Cada laptop requiere 2 horas y cada tablet requiere 1 hora. Disponibilidad: 16 horas por día.</li>
+                <li><strong>Demanda de Laptops:</strong> Máximo 7 laptops pueden venderse por día.</li>
+                <li><strong>Demanda de Tablets:</strong> Máximo 5 tablets pueden venderse por día.</li>
+            </ul>
+            
+            <p><strong>Objetivo:</strong> Determinar cuántas laptops y tablets producir diariamente para maximizar los ingresos.</p>
+        `;
+    } else if (exampleNum === 3) {
+        description = `
+            <h3>Empresa de Logística</h3>
+            <p><strong>Contexto:</strong></p>
+            <p>Una empresa de logística utiliza <strong>camionetas</strong> y <strong>camiones</strong> para entregas, y busca minimizar costos operativos mientras cumple con los requisitos de entrega.</p>
+            
+            <p><strong>Datos del problema:</strong></p>
+            <ul>
+                <li><strong>Costos:</strong> Cada viaje en camioneta cuesta $2 y cada viaje en camión cuesta $3.</li>
+                <li><strong>Entregas Mínimas:</strong> Se deben completar al menos 4 entregas diarias en total.</li>
+                <li><strong>Capacidad de Carga:</strong> Se requieren al menos 6 toneladas totales transportadas (camionetas: 2 toneladas por viaje, camiones: 1 tonelada por viaje).</li>
+                <li><strong>Disponibilidad de Flota:</strong> Máximo 5 viajes por día de cada tipo de vehículo.</li>
+            </ul>
+            
+            <p><strong>Objetivo:</strong> Determinar la cantidad de viajes en camionetas y camiones para minimizar el costo operativo diario.</p>
+        `;
+    }
+    
+    modalBody.innerHTML = description;
+    modal.style.display = 'block';
+    
+    // Cerrar modal al hacer clic fuera de él
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            closeExampleModal();
+        }
+    }
+}
+
+// Función para cerrar el modal
+function closeExampleModal() {
+    const modal = document.getElementById('exampleModal');
+    modal.style.display = 'none';
+    window.onclick = null;
+}

@@ -23,9 +23,24 @@
                 <!-- Examples -->
                 <div class="examples">
                     <h3><i class="fas fa-book"></i> Ejemplos Rápidos</h3>
-                    <button class="btn-example" onclick="loadExample(1)">Ejemplo 1: Problema Clásico</button>
-                    <button class="btn-example" onclick="loadExample(2)">Ejemplo 2: Problema de Producción</button>
-                    <button class="btn-example" onclick="loadExample(3)">Ejemplo 3: Minimización</button>
+                    <div class="example-button-container">
+                        <button class="btn-example" onclick="loadExample(1)">Ejemplo 1: Fábrica de Muebles</button>
+                        <button class="btn-view-description" onclick="showExampleDescription(1)" title="Ver descripción del problema">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="example-button-container">
+                        <button class="btn-example" onclick="loadExample(2)">Ejemplo 2: Fábrica de Electrónica</button>
+                        <button class="btn-view-description" onclick="showExampleDescription(2)" title="Ver descripción del problema">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="example-button-container">
+                        <button class="btn-example" onclick="loadExample(3)">Ejemplo 3: Empresa de Logística</button>
+                        <button class="btn-view-description" onclick="showExampleDescription(3)" title="Ver descripción del problema">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -119,6 +134,16 @@
         <footer class="footer">
             <p>Herramienta gratuita para análisis gráfico de restricciones</p>
         </footer>
+    </div>
+
+    <!-- Modal para descripción de ejemplos -->
+    <div id="exampleModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeExampleModal()">&times;</span>
+            <h2 id="modalTitle"><i class="fas fa-info-circle"></i> Descripción del Problema</h2>
+            <div id="modalBody"></div>
+            <button class="btn-primary" onclick="closeExampleModal()">Cerrar</button>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>

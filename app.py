@@ -26,6 +26,7 @@ from reportlab.lib.units import inch
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 import plotly.graph_objects as go
 import matplotlib
 matplotlib.use('Agg')  # Backend sin interfaz gráfica
@@ -814,6 +815,58 @@ def export_to_excel(data, result):
     ws.column_dimensions['B'].width = 15
     ws.column_dimensions['C'].width = 15
     ws.column_dimensions['D'].width = 15
+    
+    # Agregar gráfico como imagen
+    try:
+        row += 2
+        x1_max = data.get('x1_max', 10)
+        x2_max = data.get('x2_max', 10)
+        
+        # Título del gráfico
+        ws.merge_cells(f'A{row}:D{row}')
+        cell = ws[f'A{row}']
+        cell.value = 'Visualización Gráfica'
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='left', vertical='center')
+        cell.border = border
+        row += 1
+        
+        # Generar imagen con Matplotlib
+        print("Generando imagen con Matplotlib para Excel...")
+        img_bytes = create_matplotlib_image(result, x1_max, x2_max)
+        
+        if img_bytes:
+            # Guardar imagen temporalmente en memoria
+            img_stream = BytesIO(img_bytes)
+            
+            # Crear objeto de imagen para Excel
+            img = XLImage(img_stream)
+            
+            # Ajustar tamaño de la imagen (ancho en píxeles)
+            img.width = 600
+            img.height = 450
+            
+            # Insertar imagen en la celda A{row}
+            ws.add_image(img, f'A{row}')
+            print("Imagen agregada exitosamente a Excel")
+            
+            # Ajustar altura de las filas para que la imagen se vea bien
+            # Aproximadamente 450 píxeles / 1.33 = ~338 puntos, dividido en múltiples filas
+            for i in range(30):  # Espacio para ~30 filas de altura
+                ws.row_dimensions[row + i].height = 15
+        else:
+            print("No se pudo generar la imagen para Excel")
+            ws.merge_cells(f'A{row}:D{row}')
+            ws[f'A{row}'] = 'Nota: El gráfico no pudo ser generado. Por favor, visualiza el gráfico en la aplicación web.'
+            ws[f'A{row}'].alignment = Alignment(horizontal='left', wrap_text=True)
+    except Exception as e:
+        print(f"Error al agregar gráfico a Excel: {e}")
+        import traceback
+        traceback.print_exc()
+        ws.merge_cells(f'A{row}:D{row}')
+        ws[f'A{row}'] = 'Nota: El gráfico no pudo ser generado. Por favor, visualiza el gráfico en la aplicación web.'
+        ws[f'A{row}'].alignment = Alignment(horizontal='left', wrap_text=True)
     
     # Guardar en memoria
     file_stream = BytesIO()
